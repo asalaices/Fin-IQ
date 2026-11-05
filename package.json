@@ -1,0 +1,23 @@
+{
+  "name": "fin-iq",
+  "version": "1.0.0",
+  "description": "Transaction-based money movement, savings, and financial outlook analysis",
+  "private": true,
+  "main": "src/analysis.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/analysis.js && node --check src/server.js",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asalaices/Fin-IQ.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  }
+}
