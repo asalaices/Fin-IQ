@@ -2,6 +2,7 @@
 import csv
 import io
 import json
+from decimal import Decimal
 from datetime import datetime
 from pathlib import Path
 from .core import to_cents
@@ -84,7 +85,7 @@ def normalize(source_id, content, account="Default"):
             desc = cells[4].strip()
             if cells[3].strip():
                 desc += " [check " + cells[3].strip()[:30] + "]"
-            normalized.append((date, desc, f"{cents/100:.2f}", account, ""))
+            normalized.append((date, desc, format(Decimal(cents) / 100, ".2f"), account, ""))
     elif source_id == "monarch":
         headers = [x.strip().casefold() for x in rows[0]]
         if len(headers) != len(set(headers)):
@@ -112,6 +113,23 @@ def normalize(source_id, content, account="Default"):
             raise SourceFormatError("generic CSV needs date and description columns")
         if not ("amount" in headers or "debit" in headers or "credit" in headers):
             raise SourceFormatError("generic CSV needs amount or debit/credit columns")
+        if len(headers) != len(set(headers)):
+            raise SourceFormatError("duplicate column names")
+        if len(rows) <= 1:
+            raise SourceFormatError("no transaction rows")
+        for line, cells in enumerate(rows[1:],2):
+            if len(cells) != len(headers):
+                raise SourceFormatError(f"row {line}: expected {len(headers)} fields; got {len(cells)}")
+            entry = {name:cells[i] for i,name in enumerate(headers)}
+            _date(entry["date"], ["%Y-%m-%d","%m/%d/%Y","%m/%d/%y","%m-%d-%Y","%Y/%m/%d"],line)
+            if "amount" in entry:
+                _amount(entry["amount"],line)
+            else:
+                for key in ("debit","credit"):
+                    if key in entry and entry[key].strip():
+                        _amount(entry[key],line)
+            if not entry["description"].strip():
+                raise SourceFormatError(f"row {line}: description required")
         return {"csv":content,"source":source_id,"rows":len(rows)-1,"preview":[]}
     if not normalized:
         raise SourceFormatError("no transaction rows")
