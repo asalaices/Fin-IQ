@@ -1,0 +1,97 @@
+{
+  "manifest_version": 1,
+  "description": "Source-specific CSV export contracts. Reject unsupported or ambiguous layouts before database writes.",
+  "sources": [
+    {
+      "id": "wells_fargo",
+      "display_name": "Wells Fargo",
+      "format": "csv",
+      "header": false,
+      "field_count": 5,
+      "date_formats": [
+        "%m/%d/%Y",
+        "%m/%d/%y"
+      ],
+      "amount_sign": "negative_outflow",
+      "fields": [
+        {
+          "position": 0,
+          "name": "date",
+          "required": true
+        },
+        {
+          "position": 1,
+          "name": "amount",
+          "required": true
+        },
+        {
+          "position": 2,
+          "name": "marker",
+          "expected": [
+            "*",
+            ""
+          ],
+          "required": false
+        },
+        {
+          "position": 3,
+          "name": "check_number",
+          "required": false
+        },
+        {
+          "position": 4,
+          "name": "description",
+          "required": true
+        }
+      ],
+      "account_scope": "single",
+      "download_method": "manual_csv",
+      "validation": "strict",
+      "documentation": "https://fynnap.com/guides/wells-fargo-csv-export"
+    },
+    {
+      "id": "monarch",
+      "display_name": "Monarch Money",
+      "format": "csv",
+      "header": true,
+      "date_formats": [
+        "%Y-%m-%d",
+        "%m/%d/%Y",
+        "%m/%d/%y"
+      ],
+      "amount_sign": "negative_outflow",
+      "required_headers": [
+        "Date",
+        "Merchant",
+        "Amount",
+        "Account"
+      ],
+      "optional_headers": [
+        "Category",
+        "Original Statement",
+        "Notes",
+        "Tags",
+        "Transaction ID"
+      ],
+      "account_scope": "multi",
+      "download_method": "manual_csv",
+      "validation": "strict",
+      "documentation": "https://help.monarch.com/hc/en-us/articles/15526600975764-Downloading-Transaction-or-Account-History"
+    },
+    {
+      "id": "generic",
+      "display_name": "Generic CSV",
+      "format": "csv",
+      "header": true,
+      "amount_sign": "negative_outflow",
+      "required_headers": [
+        "date",
+        "description"
+      ],
+      "amount_mode": "amount_or_debit_credit",
+      "account_scope": "single_or_multi",
+      "download_method": "manual_csv",
+      "validation": "strict"
+    }
+  ]
+}
