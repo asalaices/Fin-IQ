@@ -27,6 +27,7 @@ HEADERS = {
     "debit": ("debit", "withdrawal", "withdrawals"),
     "credit": ("credit", "deposit", "deposits"),
     "account": ("account", "account name"),
+    "category": ("category",),
 }
 DDL = """
 CREATE TABLE IF NOT EXISTS transactions(
@@ -82,7 +83,7 @@ def categorize(db, merchant, amount):
             return category
     return "Uncategorized"
 
-def import_csv(db, content, account="Default"):
+def import_csv(db, content, account="Default", source="generic"):
     if len(content.encode("utf-8")) > 5_000_000:
         raise ValueError("CSV exceeds 5 MB")
     reader = csv.DictReader(io.StringIO(content.lstrip("\ufeff")))
@@ -111,7 +112,7 @@ def import_csv(db, content, account="Default"):
                 amount = credit - abs(debit)
             acct = str((row.get(fields["account"]) if fields["account"] else None) or account)[:120]
             key = hashlib.sha256(f"{posted}|{desc.casefold()}|{amount}|{acct.casefold()}".encode()).hexdigest()
-            rows.append((key, posted, desc, amount, acct, categorize(db, desc, amount), "csv"))
+            rows.append((key, posted, desc, amount, acct, str(row.get(fields["category"]) or "").strip()[:60] if fields["category"] and str(row.get(fields["category"]) or "").strip() and amount < 0 else categorize(db, desc, amount), source))
         except (ValueError, TypeError) as exc:
             raise ValueError(f"CSV row {line}: {exc}") from exc
     before = db.total_changes
