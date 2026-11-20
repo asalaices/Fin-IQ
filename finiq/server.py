@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .core import connect, import_csv, add_rule, report
+from .sources import sources, normalize, SourceFormatError
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STATE = Path(os.environ.get("FINIQ_STATE_DIR", "~/.local/state/finiq")).expanduser()
@@ -85,6 +86,8 @@ def handler_factory(db_path):
             elif path == "/api/report":
                 with connect(db_path) as db:
                     self.send_json(report(db))
+            elif path == "/api/sources":
+                self.send_json({"sources":sources()})
             elif path == "/api/version":
                 self.send_json(version_status())
             elif path == "/health":
@@ -104,13 +107,19 @@ def handler_factory(db_path):
                 body = json.loads(self.rfile.read(size))
                 if not isinstance(body, dict):
                     raise ValueError("expected an object")
-                if path == "/api/import":
+                if path in ("/api/import", "/api/preview"):
                     content = body.get("csv")
                     account = body.get("account", "Default")
-                    if not isinstance(content, str) or not isinstance(account, str):
-                        raise ValueError("csv and account must be strings")
-                    with connect(db_path) as db:
-                        result = import_csv(db, content, account[:120])
+                    source_id = body.get("source", "generic")
+                    if not isinstance(content, str) or not isinstance(account, str) or not isinstance(source_id, str):
+                        raise ValueError("csv, account and source must be strings")
+                    parsed = normalize(source_id, content, account)
+                    if path == "/api/preview":
+                        result = {"source":parsed["source"],"rows":parsed["rows"],"preview":parsed["preview"]}
+                    else:
+                        with connect(db_path) as db:
+                            result = import_csv(db, parsed["csv"], account[:120], source_id)
+                        result["source"] = source_id
                 elif path == "/api/rule":
                     with connect(db_path) as db:
                         add_rule(db, body.get("pattern"), body.get("category"))
