@@ -20,7 +20,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;bord
 <div class="grid"><div class="metric"><small>Income</small><strong id="income">—</strong></div><div class="metric"><small>Spending</small><strong id="spending">—</strong></div><div class="metric"><small>Net cash flow</small><strong id="net">—</strong></div><div class="metric"><small>Suggested monthly budget</small><strong id="budget">—</strong></div></div>
 <div class="split section"><section class="panel"><h2>Monthly cash flow</h2><svg id="trend" viewBox="0 0 650 210" role="img" aria-label="Monthly income and spending chart"></svg><p class="muted">Observed cash flow, not a bank balance projection. Green: income; gold: spending.</p></section><section class="panel"><h2>Spending by category</h2><div id="categories" class="scroll"></div></section></div>
 <div class="split section"><section class="panel"><h2>Potential subscriptions and repeat bills</h2><p class="muted">Repeat merchant charges in two or more months. Review each before cancelling.</p><div id="subscriptions" class="scroll"></div></section><section class="panel"><h2>Where to cut</h2><div id="cuts"></div><p class="muted">10% scenarios, not financial advice.</p></section></div>
-<div class="split section"><section class="panel"><h2>Import bank transactions</h2><p class="muted">CSV stays on this Mac. Recognizes date/description/amount or debit/credit formats and skips duplicate records.</p><div class="controls"><input id="file" type="file" accept=".csv,text/csv"><input id="account" placeholder="Account label" value="Default"><button class="primary" id="import">Import CSV</button></div><p id="import-status" class="message" role="status"></p></section>
+<div class="split section"><section class="panel"><h2>Import bank transactions</h2><p class="muted">CSV stays on this Mac. Recognizes date/description/amount or debit/credit formats and skips duplicate records.</p><div class="controls"><label for="source">Data source</label><select id="source"><option value="wells_fargo">Wells Fargo</option><option value="monarch">Monarch Money</option><option value="generic">Generic CSV</option></select><input id="file" type="file" accept=".csv,text/csv"><input id="account" placeholder="Account label" value="Default"><button id="preview">Validate / preview</button><button class="primary" id="import" disabled>Import CSV</button></div><div id="preview-rows" class="scroll"></div><p id="import-status" class="message" role="status"></p></section>
 <section class="panel"><h2>Local app manager</h2><p class="muted">Check GitHub and safely fast-forward a clean main checkout. Restart service after upgrade.</p><div class="controls"><button id="check">Check for updates</button><button id="upgrade" disabled>Upgrade installation</button></div><p id="version" class="message" role="status">Not checked yet.</p></section></div>
 <section class="panel section"><h2>Category rule</h2><p class="muted">Regex matching against merchant descriptions; custom rules take precedence. Apply to existing transactions.</p><div class="controls"><input id="pattern" placeholder="e.g. MY COFFEE SHOP"><input id="category" placeholder="Category"><button id="save-rule">Save rule</button></div><p id="rule-status" class="message" role="status"></p></section>
 <section class="panel section"><h2>Recent transactions</h2><div class="scroll"><table><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Amount</th></tr></thead><tbody id="recent"></tbody></table></div></section>
@@ -33,7 +33,33 @@ async function api(path,data){const options=data===undefined?{}:{method:"POST",h
 function table(parent,rows){parent.replaceChildren();const t=el("table","");for(const row of rows){const tr=el("tr","");for(const value of row)tr.append(el("td",String(value)));t.append(tr)}parent.append(t)}
 function chart(months){const svg=$("trend");svg.replaceChildren();if(!months.length){svg.append(el("text","Import CSV to see trends"));return}const series=months.slice(-12),max=Math.max(1,...series.flatMap(x=>[x.income_cents,x.spending_cents]));const ns="http://www.w3.org/2000/svg";series.forEach((month,i)=>{const step=630/series.length,x=10+i*step,h1=145*month.income_cents/max,h2=145*month.spending_cents/max;for(const [left,height,color] of [[x,h1,"var(--good)"],[x+step*.35,h2,"var(--accent)"]]){const r=document.createElementNS(ns,"rect");for(const [k,v] of Object.entries({x:left,y:170-height,width:Math.max(3,step*.29),height,fill:color}))r.setAttribute(k,v);svg.append(r)}const label=document.createElementNS(ns,"text");label.setAttribute("x",x);label.setAttribute("y",192);label.textContent=month.month.slice(2);svg.append(label)})}
 async function refresh(){const data=await api("/api/report");$("income").textContent=money(data.income_cents);$("spending").textContent=money(data.spending_cents);$("net").textContent=money(data.income_cents-data.spending_cents);$("budget").textContent=money(data.suggested_monthly_budget_cents);chart(data.monthly);const total=data.categories.reduce((n,x)=>n+x.cents,0)||1;$("categories").replaceChildren();for(const item of data.categories){const p=el("p",item.name+" · "+money(item.cents)),bar=el("div",""),fill=el("span","");bar.className="bar";fill.style.width=(item.cents/total*100)+"%";bar.append(fill);$("categories").append(p,bar)}table($("subscriptions"),data.recurring.map(x=>[x.merchant,money(x.monthly_cents)+"/month",x.months+" months"]));table($("cuts"),data.cuts.map(x=>[x.category,money(x.savings_monthly_cents)+"/month possible"]));table($("recent"),data.recent.map(x=>[x.posted,x.description,x.category,money(x.amount_cents)]))}
-$("import").onclick=async()=>{const file=$("file").files[0];if(!file){$("import-status").textContent="Choose a CSV file";return}$("import-status").textContent="Importing…";try{const out=await api("/api/import",{csv:await file.text(),account:$("account").value});$("import-status").textContent=out.inserted+" imported, "+out.duplicates+" duplicates skipped";await refresh()}catch(e){$("import-status").textContent=e.message}};
+let approved=null;
+function invalidate(){approved=null;$("import").disabled=true;$("preview-rows").replaceChildren()}
+for(const id of ["file","source","account"])$(id).addEventListener("change",invalidate);
+$("account").addEventListener("input",invalidate);
+$("preview").onclick=async()=>{
+  invalidate();
+  const file=$("file").files[0];
+  if(!file){$("import-status").textContent="Choose a CSV file";return}
+  if(file.size>5000000){$("import-status").textContent="CSV exceeds 5 MB";return}
+  $("import-status").textContent="Validating source format…";
+  try{
+    const payload={csv:await file.text(),account:$("account").value,source:$("source").value};
+    const result=await api("/api/preview",payload);
+    approved=payload;$("import").disabled=false;
+    $("import-status").textContent=result.rows+" validated rows · Source: "+result.source;
+    table($("preview-rows"),result.preview.map(x=>[x.date,x.description,x.amount,x.account,x.category]));
+  }catch(e){$("import-status").textContent=e.message}
+};
+$("import").onclick=async()=>{
+  if(!approved)return;
+  $("import").disabled=true;$("import-status").textContent="Importing validated file…";
+  try{
+    const out=await api("/api/import",approved);
+    $("import-status").textContent=out.inserted+" imported, "+out.duplicates+" duplicates skipped from "+out.source;
+    invalidate();await refresh()
+  }catch(e){$("import-status").textContent=e.message;invalidate()}
+};
 $("save-rule").onclick=async()=>{try{await api("/api/rule",{pattern:$("pattern").value,category:$("category").value});$("rule-status").textContent="Rule saved and transactions recategorized";await refresh()}catch(e){$("rule-status").textContent=e.message}};
 $("check").onclick=async()=>{try{$("version").textContent="Checking origin…";const v=await api("/api/check-updates",{});$("version").textContent="Branch "+v.branch+" · "+v.behind+" commit(s) behind · "+(v.clean?"clean":"modified");$("upgrade").disabled=!(v.branch==="main"&&v.clean&&v.behind>0)}catch(e){$("version").textContent=e.message}};
 $("upgrade").onclick=async()=>{if(!confirm("Upgrade from GitHub? A restart will be required."))return;try{const v=await api("/api/upgrade",{confirm:"UPGRADE"});$("version").textContent=v.message;$("upgrade").disabled=true}catch(e){$("version").textContent=e.message}};
